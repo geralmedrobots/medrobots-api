@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: medrobots
+      POSTGRES_USER: medrobots
+      POSTGRES_PASSWORD: medrobots
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medrobots -d medrobots"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build: .
+    environment:
+      APP_NAME: Med Robots API
+      APP_VERSION: 0.1.0
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://medrobots:medrobots@db:5432/medrobots
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:4173
+      LOG_LEVEL: INFO
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+
+volumes:
+  postgres_data:
