@@ -99,6 +99,41 @@ def test_unexpected_error_has_no_stack_trace(client, payload) -> None:
     client.app.dependency_overrides.clear()
 
 
+def test_request_id_is_generated_when_absent(client) -> None:
+    response = client.get("/api/v1/health")
+    assert "x-request-id" in response.headers
+    assert len(response.headers["x-request-id"]) > 0
+
+
+def test_request_id_is_echoed_when_valid(client) -> None:
+    response = client.get("/api/v1/health", headers={"X-Request-ID": "abc-123_XYZ"})
+    assert response.headers["x-request-id"] == "abc-123_XYZ"
+
+
+def test_request_id_is_replaced_when_malformed(client) -> None:
+    malformed = "not a valid id!"
+    response = client.get("/api/v1/health", headers={"X-Request-ID": malformed})
+    assert response.headers["x-request-id"] != malformed
+
+
+def test_request_id_is_replaced_when_too_long(client) -> None:
+    too_long = "a" * 200
+    response = client.get("/api/v1/health", headers={"X-Request-ID": too_long})
+    assert response.headers["x-request-id"] != too_long
+
+
+def test_request_id_present_on_error_responses(client, payload) -> None:
+    def broken_db():
+        raise RuntimeError("boom")
+        yield
+
+    client.app.dependency_overrides[get_db] = broken_db
+    response = client.post("/api/v1/contacts", json=payload)
+    assert response.status_code == 500
+    assert "x-request-id" in response.headers
+    client.app.dependency_overrides.clear()
+
+
 def test_cors_allows_only_configured_origins(client) -> None:
     headers = {"Access-Control-Request-Method": "POST"}
     allowed = client.options(

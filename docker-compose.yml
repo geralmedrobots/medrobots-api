@@ -13,6 +13,22 @@ services:
       timeout: 3s
       retries: 10
 
+  # One-off migration step, run to completion before the api service starts.
+  # This mirrors how migrations should run in production: as an explicit,
+  # single step ahead of rolling out application instances, not embedded in
+  # every container start (which would race when scaled to multiple replicas).
+  migrate:
+    build: .
+    environment:
+      ENVIRONMENT: development
+      DATABASE_URL: postgresql+psycopg://medrobots:medrobots@db:5432/medrobots
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173,http://127.0.0.1:4173
+      LOG_LEVEL: INFO
+    depends_on:
+      db:
+        condition: service_healthy
+    command: ["alembic", "upgrade", "head"]
+
   api:
     build: .
     environment:
@@ -25,9 +41,8 @@ services:
     ports:
       - "127.0.0.1:${API_PORT:-8000}:8000"
     depends_on:
-      db:
-        condition: service_healthy
-    command: ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+      migrate:
+        condition: service_completed_successfully
 
 volumes:
   postgres_data:

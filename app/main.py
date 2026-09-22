@@ -16,6 +16,7 @@ from app.api.router import router
 from app.core.config import Settings
 from app.core.logging import configure_logging
 from app.core.rate_limit import limiter
+from app.core.request_id import REQUEST_ID_HEADER, resolve_request_id
 from app.db.session import build_engine, build_session_factory
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(application: FastAPI):
-        engine = build_engine(config.database_url)
+        engine = build_engine(config)
         application.state.session_factory = build_session_factory(engine)
         logger.info("startup environment=%s version=%s", config.environment, config.app_version)
         try:
@@ -60,6 +61,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.middleware("http")
     async def request_logging_and_size(request: Request, call_next: Any):
         started = time.monotonic()
+        request_id = resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+        request.state.request_id = request_id
         response = None
         origin = request.headers.get("origin")
         is_preflight = (
@@ -103,8 +106,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if response is None:
             response = await call_next(request)
         response.headers.update(SECURITY_HEADERS)
+        response.headers[REQUEST_ID_HEADER] = request_id
         logger.info(
-            "request method=%s path=%s status=%s duration_ms=%.1f",
+            "request request_id=%s method=%s path=%s status=%s duration_ms=%.1f",
+            request_id,
             request.method,
             request.url.path,
             response.status_code,
@@ -150,8 +155,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     @application.exception_handler(SQLAlchemyError)
-    async def database_error(_request: Request, error: SQLAlchemyError) -> JSONResponse:
-        logger.error("database error: %s", type(error).__name__)
+    async def database_error(request: Request, error: SQLAlchemyError) -> JSONResponse:
+        request_id = getattr(request.state, "request_id", None)
+        # Only the exception type is logged: bound parameters may contain personal data.
+        logger.error("database error request_id=%s type=%s", request_id, type(error).__name__)
         return JSONResponse(
             status_code=503,
             content={
@@ -160,15 +167,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "message": "Service temporarily unavailable",
                 }
             },
+            headers={REQUEST_ID_HEADER: request_id} if request_id else None,
         )
 
     @application.exception_handler(Exception)
-    async def unexpected_error(_request: Request, error: Exception) -> JSONResponse:
-        logger.error("unexpected application error: %s", type(error).__name__)
+    async def unexpected_error(request: Request, error: Exception) -> JSONResponse:
+        request_id = getattr(request.state, "request_id", None)
+        logger.exception("unexpected application error request_id=%s", request_id)
+        headers = dict(SECURITY_HEADERS)
+        if request_id:
+            headers[REQUEST_ID_HEADER] = request_id
         return JSONResponse(
             status_code=500,
             content={"error": {"code": "internal_error", "message": "Internal server error"}},
-            headers=SECURITY_HEADERS,
+            headers=headers,
         )
 
     application.include_router(router)

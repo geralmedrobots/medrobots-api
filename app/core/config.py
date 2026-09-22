@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     database_url: str = "postgresql+psycopg://medrobots:medrobots@localhost:5432/medrobots"
     cors_origins: str = "http://localhost:5173,http://127.0.0.1:5173"
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = "INFO"
+    db_pool_size: int = Field(default=5, gt=0)
+    db_max_overflow: int = Field(default=10, ge=0)
+    db_pool_timeout: int = Field(default=30, gt=0)
+    db_pool_recycle: int = Field(default=1800, gt=0)
 
     @field_validator("app_name", "app_version", "database_url", "cors_origins", mode="before")
     @classmethod
