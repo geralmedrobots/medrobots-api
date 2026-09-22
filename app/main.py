@@ -10,6 +10,7 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import SQLAlchemyError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.router import router
 from app.core.config import Settings
@@ -19,6 +20,11 @@ from app.db.session import build_engine, build_session_factory
 
 logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 16_384
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "no-referrer",
+}
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -54,19 +60,49 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @application.middleware("http")
     async def request_logging_and_size(request: Request, call_next: Any):
         started = time.monotonic()
+        response = None
+        origin = request.headers.get("origin")
+        is_preflight = (
+            request.method == "OPTIONS" and "access-control-request-method" in request.headers
+        )
+        if origin and origin not in config.allowed_origins and not is_preflight:
+            response = JSONResponse(
+                status_code=403,
+                content={"error": {"code": "origin_not_allowed", "message": "Origin not allowed"}},
+            )
         if request.method in {"POST", "PUT", "PATCH"}:
-            if len(await request.body()) > MAX_BODY_BYTES:
+            if (
+                request.headers.get("content-length", "").isdigit()
+                and int(request.headers["content-length"]) > MAX_BODY_BYTES
+            ):
                 response = JSONResponse(
                     status_code=413,
                     content={
                         "error": {"code": "request_too_large", "message": "Request body too large"}
                     },
                 )
-                logger.warning(
-                    "request method=%s path=%s status=413", request.method, request.url.path
-                )
-                return response
-        response = await call_next(request)
+            elif response is None:
+                chunks = []
+                size = 0
+                async for chunk in request.stream():
+                    size += len(chunk)
+                    if size > MAX_BODY_BYTES:
+                        response = JSONResponse(
+                            status_code=413,
+                            content={
+                                "error": {
+                                    "code": "request_too_large",
+                                    "message": "Request body too large",
+                                }
+                            },
+                        )
+                        break
+                    chunks.append(chunk)
+                if response is None:
+                    request._body = b"".join(chunks)
+        if response is None:
+            response = await call_next(request)
+        response.headers.update(SECURITY_HEADERS)
         logger.info(
             "request method=%s path=%s status=%s duration_ms=%.1f",
             request.method,
@@ -91,6 +127,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "details": details,
                 }
             },
+        )
+
+    @application.exception_handler(StarletteHTTPException)
+    async def http_error(_request: Request, error: StarletteHTTPException) -> JSONResponse:
+        messages = {
+            404: ("not_found", "Not found"),
+            405: ("method_not_allowed", "Method not allowed"),
+        }
+        code, message = messages.get(error.status_code, ("http_error", "Request failed"))
+        return JSONResponse(
+            status_code=error.status_code,
+            content={"error": {"code": code, "message": message}},
+            headers=error.headers,
         )
 
     @application.exception_handler(RateLimitExceeded)
@@ -119,6 +168,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSONResponse(
             status_code=500,
             content={"error": {"code": "internal_error", "message": "Internal server error"}},
+            headers=SECURITY_HEADERS,
         )
 
     application.include_router(router)

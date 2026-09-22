@@ -27,3 +27,27 @@ def test_settings_reject_wildcard_cors() -> None:
 def test_production_requires_postgres() -> None:
     with pytest.raises(ValidationError):
         Settings(environment="production", database_url="sqlite:///:memory:")
+
+
+def test_production_requires_explicit_database_and_https_cors(monkeypatch) -> None:
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    with pytest.raises(ValidationError, match="DATABASE_URL"):
+        Settings(environment="production")
+    with pytest.raises(ValidationError, match="CORS_ORIGINS"):
+        Settings(
+            environment="production",
+            database_url="postgresql+psycopg://user:pass@localhost/db",
+        )
+    with pytest.raises(ValidationError, match="HTTPS"):
+        Settings(
+            environment="production",
+            database_url="postgresql+psycopg://user:pass@localhost/db",
+            cors_origins="http://example.com",
+        )
+    with pytest.raises(ValidationError, match="development database credentials"):
+        Settings(
+            environment="production",
+            database_url="postgresql+psycopg://medrobots:medrobots@localhost/db",
+            cors_origins="https://example.com",
+        )

@@ -30,6 +30,15 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL must use PostgreSQL with psycopg or SQLite for tests")
         if self.environment == "production" and url.drivername != "postgresql+psycopg":
             raise ValueError("production requires PostgreSQL with psycopg")
+        if self.environment == "production":
+            if "database_url" not in self.model_fields_set:
+                raise ValueError("production requires DATABASE_URL")
+            if url.username == "medrobots" and url.password == "medrobots":
+                raise ValueError("production cannot use development database credentials")
+            if "cors_origins" not in self.model_fields_set:
+                raise ValueError("production requires CORS_ORIGINS")
+            if any(origin.startswith("http://") for origin in self.allowed_origins):
+                raise ValueError("production CORS_ORIGINS must use HTTPS")
         if not self.allowed_origins:
             raise ValueError("CORS_ORIGINS must include at least one origin")
         return self

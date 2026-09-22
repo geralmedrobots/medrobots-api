@@ -55,6 +55,17 @@ def test_missing_required_field(client, payload) -> None:
     assert response.json()["error"]["details"][0]["field"] == "body.last_name"
 
 
+@pytest.mark.parametrize(
+    ("field", "length"),
+    [("first_name", 101), ("last_name", 101), ("phone", 41), ("address", 256), ("message", 5001)],
+)
+def test_contact_field_length_limits(client, payload, field, length) -> None:
+    payload[field] = "x" * length
+    response = client.post("/api/v1/contacts", json=payload)
+    assert response.status_code == 422
+    assert response.json()["error"]["code"] == "validation_error"
+
+
 def test_openapi_and_documentation(client) -> None:
     for path in ("/docs", "/redoc", "/openapi.json"):
         assert client.get(path).status_code == 200

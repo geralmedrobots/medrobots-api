@@ -37,6 +37,8 @@ Copiar `.env.example` para `.env` e adaptar os valores. `.env` está ignorado pe
 
 O exemplo permite `http://localhost:5173`, `http://127.0.0.1:5173` e `http://127.0.0.1:4173` para desenvolvimento. Ajustar `CORS_ORIGINS` à origem real do frontend antes de qualquer publicação. O valor `*` é rejeitado. O Docker Compose usa credenciais **apenas locais de desenvolvimento**; não as reutilizar fora do ambiente local.
 
+Em `ENVIRONMENT=production`, definir explicitamente `DATABASE_URL` e `CORS_ORIGINS`; as origens têm de usar HTTPS e as credenciais de exemplo são rejeitadas. Os valores de desenvolvimento por defeito não são aceites como configuração implícita de produção. CORS é uma política dos browsers; clientes sem `Origin` continuam a poder chamar o endpoint público. Pedidos com `Origin` não autorizada são rejeitados.
+
 ## Execução local
 
 Com Python 3.14 e PostgreSQL disponível:
@@ -93,6 +95,8 @@ Os testes usam SQLite temporário para serem rápidos e determinísticos, sem se
 
 ## Segurança e próximos passos
 
-A API limita o corpo do pedido a 16 KiB, valida tipos e comprimentos, rejeita campos extra, restringe CORS e devolve erros sem stack traces ou dados internos. Os logs registam método, caminho, estado e duração, sem guardar a mensagem ou o email do contacto. A resposta de criação não devolve os dados pessoais enviados.
+A API limita o corpo do pedido a 16 KiB durante a leitura, valida tipos e comprimentos, rejeita campos extra, restringe CORS e devolve erros sem stack traces ou dados internos. Os logs registam método, caminho, estado e duração, sem guardar a mensagem ou o email do contacto. A resposta de criação não devolve os dados pessoais enviados. As respostas incluem `X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY` e `Referrer-Policy: no-referrer`. Não se aplica CSP global porque a documentação interativa precisa de scripts e estilos próprios.
+
+O `POST /api/v1/contacts` aceita até 5 pedidos por minuto por endereço remoto. O `slowapi` usa armazenamento em memória local ao processo: vários workers ou instâncias terão contadores independentes. Antes de um deployment multi-instância, configurar armazenamento partilhado ou um limite no gateway. A aplicação usa `request.client.host`; cabeçalhos de proxy só devem alterar esse endereço após configurar proxies de confiança no servidor ASGI.
 
 Antes da produção: configurar credenciais e origins reais, alojar PostgreSQL com backups, estabelecer política de retenção e proteção contra abuso, integrar o frontend, definir o processamento dos contactos e um serviço de email, e configurar observabilidade e deployment. Estas etapas não fazem parte desta fase.
