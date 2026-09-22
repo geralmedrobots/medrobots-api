@@ -7,11 +7,14 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.api.router import router
 from app.core.config import Settings
 from app.core.logging import configure_logging
+from app.core.rate_limit import limiter
 from app.db.session import build_engine, build_session_factory
 
 logger = logging.getLogger(__name__)
@@ -39,6 +42,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="Med Robots contact API. Not deployed to production.",
         lifespan=lifespan,
     )
+    application.state.limiter = limiter
+    application.add_middleware(SlowAPIMiddleware)
     application.add_middleware(
         CORSMiddleware,
         allow_origins=list(config.allowed_origins),
@@ -86,6 +91,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     "details": details,
                 }
             },
+        )
+
+    @application.exception_handler(RateLimitExceeded)
+    async def rate_limit_error(_request: Request, _error: RateLimitExceeded) -> JSONResponse:
+        return JSONResponse(
+            status_code=429,
+            content={"error": {"code": "rate_limit_exceeded", "message": "Too many requests"}},
         )
 
     @application.exception_handler(SQLAlchemyError)

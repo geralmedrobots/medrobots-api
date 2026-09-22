@@ -3,6 +3,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 
 from app.core.config import Settings
+from app.core.rate_limit import limiter
 from app.db.base import Base
 from app.db.models import Contact  # noqa: F401 - registers table metadata
 from app.main import create_app
@@ -31,6 +32,7 @@ def database_url(tmp_path) -> str:
 
 @pytest.fixture
 def client(database_url: str):
+    limiter.reset()
     settings = Settings(
         environment="test",
         database_url=database_url,

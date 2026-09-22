@@ -14,6 +14,18 @@ def test_oversized_body_is_rejected(client) -> None:
     assert response.json()["error"]["code"] == "request_too_large"
 
 
+def test_contact_rate_limit_returns_429(client, payload) -> None:
+    for _ in range(5):
+        assert client.post("/api/v1/contacts", json=payload).status_code == 201
+
+    response = client.post("/api/v1/contacts", json=payload)
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": {"code": "rate_limit_exceeded", "message": "Too many requests"}
+    }
+    assert client.get("/api/v1/health").status_code == 200
+
+
 def test_database_error_has_no_internal_details(client, payload) -> None:
     def broken_db():
         raise OperationalError("SELECT private", {}, Exception("secret password"))
