@@ -64,13 +64,12 @@ O Compose tem três serviços: `db` (PostgreSQL local), `migrate` (aplica `alemb
 
 Se a porta 8000 já estiver ocupada, executar `API_PORT=8001 docker compose up --build -d` e aceder à API em `127.0.0.1:8001`.
 
-O `Dockerfile` usa build multi-stage (dependências instaladas numa stage `builder`, imagem final sem ferramentas de build), corre como utilizador não-root, não usa `--reload` e define um `HEALTHCHECK` que chama `/api/v1/health/live`.
+O `Dockerfile` usa build multi-stage (dependências instaladas numa stage `builder`, imagem final sem ferramentas de build), corre como utilizador não-root, não usa `--reload` e define um `HEALTHCHECK` que chama `/api/v1/health`.
 
 ## Endpoints e documentação
 
-- `GET /api/v1/health` → alias legado de `/api/v1/health/live`, mantido por compatibilidade.
-- `GET /api/v1/health/live` → `200 {"status":"ok"}` (liveness). Não acede à base de dados; indica apenas que o processo responde. Usado pelo `HEALTHCHECK` do Docker.
-- `GET /api/v1/health/ready` → `200 {"status":"ok","database":"ok"}` (readiness) quando a base de dados responde a `SELECT 1`; `503` com o formato de erro comum quando a base de dados está indisponível.
+- `GET /api/v1/health` → `200 {"status":"ok"}` (liveness). Não acede à base de dados; indica apenas que o processo responde. Usado pelo `HEALTHCHECK` do Docker.
+- `GET /api/v1/ready` → `200 {"status":"ok","database":"ok"}` (readiness) quando a base de dados responde a `SELECT 1`; `503` com o formato de erro comum quando a base de dados está indisponível.
 - `POST /api/v1/contacts` → `201` com `id`, `status` e `created_at`. Aceita `first_name`, `last_name`, `email`, `phone`, `address` e `message`. Nome, apelido, email e mensagem são obrigatórios. `phone` e `address` são opcionais. Campos desconhecidos, valores inválidos e texto vazio são rejeitados.
 - `/docs`, `/redoc` e `/openapi.json` mostram o contrato OpenAPI. Ficam acessíveis em development e test; uma futura fase pode decidir restringi-los em produção, o que ainda não foi implementado por falta de uma política concreta (autenticação, rede, etc.).
 
@@ -115,6 +114,9 @@ cp .env.example .env
 
 ```bash
 .venv/bin/pytest -q
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+.venv/bin/python -m compileall -q app migrations
 ```
 
 A suite usa `ENVIRONMENT=test` com SQLite temporário (ver `tests/conftest.py`); não depende de PostgreSQL nem de rede.
@@ -144,7 +146,13 @@ Esta fase (Production Readiness) prepara a aplicação, mas as seguintes áreas 
 - pipeline de CI/CD;
 - ambiente de staging;
 - integração com o frontend real;
-- armazenamento partilhado do rate limiting (ver abaixo).
+- armazenamento partilhado do rate limiting (ver abaixo);
+- configuração de proxies de confiança (`trusted proxy`) para aceitar `X-Forwarded-For` de forma segura.
+
+## Health
+
+- `GET /api/v1/health` — liveness. Responde `200 {"status":"ok"}` sempre que o processo está vivo; não acede à base de dados. Usado pelo `HEALTHCHECK` do Docker.
+- `GET /api/v1/ready` — readiness. Responde `200 {"status":"ok","database":"ok"}` quando a base de dados responde a `SELECT 1`; responde `503` (formato de erro comum, sem detalhes internos) quando a base de dados está indisponível.
 
 ## Segurança e próximos passos
 

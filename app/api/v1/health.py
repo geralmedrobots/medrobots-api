@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.db.session import get_db
 from app.schemas.error import ErrorResponse
 
-router = APIRouter(tags=["Health"], prefix="/health")
+router = APIRouter(tags=["Health"])
 
 
 class LivenessResponse(BaseModel):
@@ -21,16 +21,7 @@ class ReadinessResponse(BaseModel):
 
 
 @router.get(
-    "",
-    response_model=LivenessResponse,
-    summary="Liveness (legacy alias)",
-    description=(
-        "Alias of /health/live kept for backward compatibility. "
-        "Reports that the API process responds; database connectivity is not checked."
-    ),
-)
-@router.get(
-    "/live",
+    "/health",
     response_model=LivenessResponse,
     summary="Liveness probe",
     description=(
