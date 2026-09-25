@@ -142,6 +142,19 @@ def test_cors_allows_only_configured_origins(client) -> None:
     assert allowed.status_code == 200
     assert allowed.headers["access-control-allow-origin"] == "https://medrobots.pt"
 
+    frontend_preflight = client.options(
+        "/api/v1/contacts",
+        headers={
+            "Origin": "https://medrobots.pt",
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": "Content-Type, Idempotency-Key, X-Request-ID",
+        },
+    )
+    assert frontend_preflight.status_code == 200
+    allowed_headers = frontend_preflight.headers["access-control-allow-headers"].lower()
+    for header in ("content-type", "idempotency-key", "x-request-id"):
+        assert header in allowed_headers
+
     denied = client.options(
         "/api/v1/contacts", headers={**headers, "Origin": "https://evil.example"}
     )

@@ -55,7 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         CORSMiddleware,
         allow_origins=list(config.allowed_origins),
         allow_methods=["GET", "POST", "OPTIONS"],
-        allow_headers=["Content-Type"],
+        allow_headers=["Content-Type", "Idempotency-Key", "X-Request-ID"],
     )
 
     @application.middleware("http")
