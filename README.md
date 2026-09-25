@@ -1,6 +1,6 @@
 # Med Robots API
 
-Backend local para guardar pedidos de contacto da Med Robots. É uma API independente do website `paulositecopy` e **ainda não está em produção**. Nesta fase não envia emails nem altera o frontend.
+Backend para guardar pedidos de contacto da Med Robots. A API está integrada com o formulário do website `paulositecopy`, mas **ainda não está em produção**. Nesta fase persiste os pedidos; o envio de emails/notificações ainda não está implementado.
 
 ## Stack e arquitetura
 
@@ -84,6 +84,8 @@ O browser pode repetir um `POST /api/v1/contacts` por duplo clique, timeout do c
 
 O website deve gerar um valor único (ex.: UUID) por submissão do formulário e reenviá-lo em qualquer retry automático da mesma submissão.
 
+O frontend `paulositecopy` implementa este comportamento: gera uma chave por payload normalizado, impede submissões concorrentes e reutiliza a mesma chave quando o mesmo pedido é repetido após uma falha. O CORS permite explicitamente `Content-Type`, `Idempotency-Key` e `X-Request-ID` para origins configuradas.
+
 Todos os pedidos e respostas incluem o cabeçalho `X-Request-ID`: se o cliente enviar um valor válido (`[A-Za-z0-9_-]{1,64}`) este é devolvido tal e qual; caso contrário é gerado um novo UUID. O mesmo identificador aparece nos logs do pedido, o que facilita correlacionar um erro reportado pelo cliente com as linhas de log correspondentes.
 
 Exemplo local:
@@ -160,7 +162,6 @@ Esta fase (Production Readiness) prepara a aplicação, mas as seguintes áreas 
 - monitorização/observabilidade (métricas, tracing, alerting);
 - pipeline de deployment (CI/CD além de lint+testes);
 - ambiente de staging;
-- integração com o frontend real;
 - armazenamento partilhado do rate limiting (ver abaixo);
 - configuração de proxies de confiança (`trusted proxy`) para aceitar `X-Forwarded-For` de forma segura.
 
@@ -171,7 +172,7 @@ Esta fase (Production Readiness) prepara a aplicação, mas as seguintes áreas 
 - idempotência opcional via header `Idempotency-Key`;
 - validação de entrada (tipos, limites, campos desconhecidos, blank strings);
 - rate limiting (5/min por IP no `POST /api/v1/contacts`);
-- CORS explícito por `CORS_ORIGINS` (sem wildcard, HTTPS obrigatório em produção);
+- CORS explícito por `CORS_ORIGINS` (sem wildcard, HTTPS obrigatório em produção), incluindo `Content-Type`, `Idempotency-Key` e `X-Request-ID` para o frontend;
 - tratamento de erros consistente (422/429/413/403/503/500) sem detalhes internos;
 - health/readiness (`/api/v1/health`, `/api/v1/ready`);
 - Docker multi-stage, não-root, com healthcheck; migrações como passo separado no Compose;
@@ -185,7 +186,6 @@ Esta fase (Production Readiness) prepara a aplicação, mas as seguintes áreas 
 - alojamento de produção (infraestrutura, PostgreSQL gerido, secrets manager);
 - monitorização/observabilidade e ambiente de staging;
 - deployment automático (CD);
-- integração real com o frontend `paulositecopy` (este é o próximo passo, fora desta fase);
 - armazenamento partilhado do rate limiting para múltiplas instâncias.
 
 Esta secção não deve ser lida como "production ready" — ver "Production" e "Segurança e próximos passos" abaixo para os requisitos e limitações concretas antes de qualquer publicação real.
@@ -219,4 +219,4 @@ POST /contacts → validação → database → (fase futura) notification/email
 
 Esse worker poderia, por exemplo, correr como um processo separado que lê contactos com `status=new` (ou consumir um evento), enviar o email e transitar o `status` para `in_progress`/`resolved` — mas essa decisão de design pertence à fase em que o email for efetivamente implementado.
 
-Antes da produção: configurar credenciais e origins reais, alojar PostgreSQL com backups, estabelecer política de retenção e proteção contra abuso, integrar o frontend, definir o processamento dos contactos e um serviço de email, e configurar observabilidade e deployment. Estas etapas não fazem parte desta fase.
+Antes da produção: configurar credenciais e origins reais, alojar PostgreSQL com backups, estabelecer política de retenção e proteção contra abuso, definir o processamento dos contactos e um serviço de email, e configurar observabilidade e deployment. Estas etapas não fazem parte desta fase.
